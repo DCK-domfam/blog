@@ -4,10 +4,42 @@ import Joi from 'joi';
 
 const { ObjectId } = mongoose.Types;
 
-export const checkObjectId = (ctx, next) => {
+//작성자만 포스트를 수정/삭제 권한 부여
+//checkObjectId => getPostById로 전환
+// export const checkObjectId = (ctx, next) => {
+//   const { id } = ctx.params;
+//   if (!ObjectId.isValid(id)) {
+//     ctx.status = 400; // Bad Request
+//     return;
+//   }
+//   return next();
+// };
+export const getPostById = async (ctx, next) => {
   const { id } = ctx.params;
-  if (!ObjectId.isValid(id)) {
-    ctx.status = 400; // Bad Request
+  if(!ObjectId.isValid(id)){
+    ctx.status = 400;   //Bad Request
+    return;
+  }
+  try{
+    const post = await Post.findById(id);
+    //포스트가 존재하지 않을 때
+    if(!post){
+      ctx.status = 404; //Not found
+      return;
+    }
+    ctx.state.post = post;
+    return next();
+  }
+  catch(e){
+    ctx.throw(500, e);
+  }
+};
+
+//id로 찾은 포스트가 로그인 중인 사용자가 작성한 포스트인지 확인하는 미들웨어
+export const checkOwnPost = (ctx, next) => {
+  const { user, post } = ctx.state;
+  if(post.user._id.toString() !== user._id){
+    ctx.status = 403;
     return;
   }
   return next();
@@ -44,6 +76,7 @@ export const write = async ctx => {
     title,
     body,
     tags,
+    user: ctx.state.user,
   });
   try {
     await post.save();
@@ -54,7 +87,7 @@ export const write = async ctx => {
 };
 
 /*
-  GET /api/posts
+  GET /api/posts?username=&tag=&page=
 */
 export const list = async ctx => {
   // query 는 문자열이기 때문에 숫자로 변환해주어야합니다.
@@ -66,14 +99,21 @@ export const list = async ctx => {
     return;
   }
 
+  const { tag, username } = ctx.query;
+  //tag, username 값이 유효하면 객체 안에 넣고, 그렇지 않으면 넣지 않음
+  const query = {
+    ...(username ? { 'user.username': username } : {}),
+    ...(tag ? { tag: tag } : {}),
+  };
+
   try {
-    const posts = await Post.find()
+    const posts = await Post.find(query)
       .sort({ _id: -1 })
       .limit(10)
       .skip((page - 1) * 10)
       .lean()
       .exec();
-    const postCount = await Post.countDocuments().exec();
+    const postCount = await Post.countDocuments(query).exec();
     ctx.set('Last-Page', Math.ceil(postCount / 10));
     ctx.body = posts.map(post => ({
       ...post,
@@ -89,17 +129,19 @@ export const list = async ctx => {
   GET /api/posts/:id
 */
 export const read = async ctx => {
-  const { id } = ctx.params;
-  try {
-    const post = await Post.findById(id).exec();
-    if (!post) {
-      ctx.status = 404; // Not Found
-      return;
-    }
-    ctx.body = post;
-  } catch (e) {
-    ctx.throw(500, e);
-  }
+  //미들웨어로 id가 있는 user만 들어오기 때문에 아래 코드 간소화 가능
+  // const { id } = ctx.params;
+  // try {
+  //   const post = await Post.findById(id).exec();
+  //   if (!post) {
+  //     ctx.status = 404; // Not Found
+  //     return;
+  //   }
+  //   ctx.body = post;
+  // } catch (e) {
+  //   ctx.throw(500, e);
+  // }
+  ctx.body = ctx.state.post;
 };
 
 /*
@@ -132,6 +174,7 @@ export const update = async ctx => {
     tags: Joi.array().items(Joi.string()),
   });
 
+  
   // 검증 후, 검증 실패시 에러처리
   const result = Joi.validate(ctx.request.body, schema);
   if (result.error) {
@@ -139,7 +182,6 @@ export const update = async ctx => {
     ctx.body = result.error;
     return;
   }
-
   try {
     const post = await Post.findByIdAndUpdate(id, ctx.request.body, {
       new: true, // 이 값을 설정하면 업데이트된 데이터를 반환합니다.

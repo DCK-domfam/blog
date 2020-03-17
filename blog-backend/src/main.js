@@ -5,11 +5,11 @@ import bodyParser from 'koa-bodyparser';
 import mongoose from 'mongoose';
 
 import api from './api';
+import jwtMiddleware from './lib/jwtMiddleware'; // 토큰 검증용 미들웨어 호출
 // import createFakeData from './createFakeData';
 
 // 비구조화 할당을 통하여 process.env 내부 값에 대한 레퍼런스 만들기
 const { PORT, MONGO_URI } = process.env;
-
 
 mongoose
   .connect(MONGO_URI, { useNewUrlParser: true, useFindAndModify: false })
@@ -29,6 +29,9 @@ router.use('/api', api.routes()); // api 라우트 적용
 
 // 라우터 적용 전에 bodyParser 적용
 app.use(bodyParser());
+
+// 토큰 검증용 미들웨어
+app.use(jwtMiddleware);
 
 // app 인스턴스에 라우터 적용
 app.use(router.routes()).use(router.allowedMethods());
