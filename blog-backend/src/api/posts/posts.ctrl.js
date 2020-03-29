@@ -113,13 +113,26 @@ export const list = async ctx => {
       .skip((page - 1) * 10)
       .lean()
       .exec();
-    const postCount = await Post.countDocuments(query).exec();
-    ctx.set('Last-Page', Math.ceil(postCount / 10));
-    ctx.body = posts.map(post => ({
-      ...post,
-      body:
-        post.body.length < 200 ? post.body : `${post.body.slice(0, 200)}...`,
-    }));
+    const postCount = await Post.countDocuments().exec();
+    ctx.set('Last-Page', Math.ceil(postCount / 10)); //Last-Page라는 커스텀 HTTP헤더를 설정함.
+    
+    // !!! 200자 제한 case1 !!!!
+    // ctx.body = posts
+    //   .map(post => post.toJSON())
+    //   .map(post => ({
+    //     ...post,
+    //     body:
+    //       post.body.length < 200 ? post.body : `${post.body.slice(0, 200)}...`,
+    //   }));
+
+    // !!! 200자 제한 case2 !!!!
+    ctx.body = posts      
+      .map(post => ({
+        ...post,
+        body:
+          post.body.length < 200 ? post.body : `${post.body.slice(0, 200)}...`,
+      }));    
+
   } catch (e) {
     ctx.throw(500, e);
   }
